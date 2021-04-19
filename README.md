@@ -1,4 +1,4 @@
-# gleague-nba
+# gleague-nba-comparisons
 The goal of the work within this repository is to give NBA front offices and basketball analysts the ability to efficiently generate player comparisons between NBA players and G League players.
 
 Included within this repository are a few files: 
