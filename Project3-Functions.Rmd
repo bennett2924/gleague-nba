@@ -34,7 +34,6 @@ remove <- c("Player","Tm","Age","G","MP","GS","X",
             "FG","X3P","X2P","FT","TRB","TRB.","WS","WS.48")
 
 gleague_clean <- gleague %>% filter(MP > 500 & Age < 24) %>% select(-remove)
-head(gleague_clean)
 ```
 
 ```{r}
@@ -51,7 +50,6 @@ rownames(nba_merge) <- nba_merge$ID
 
 keep <- names(gleague_clean)
 nba_clean <- nba_merge %>% filter(MP > 1500) %>% select(keep)
-head(nba_clean)
 ```
 
 ```{r}
@@ -64,7 +62,6 @@ nba_clean[,"O/D"] <- nba_clean$OFF/nba_clean$DEF
 
 # Scale data
 nba_scale <- nba_clean %>% scale %>% as.data.frame %>% na.omit 
-head(nba_scale)
 ```
 
 ```{r}
@@ -77,7 +74,6 @@ gleague_clean[,"O/D"] <- gleague_clean$OFF/gleague_clean$DEF
 
 # Scale data
 gleague_scale <- gleague_clean %>% scale %>% as.data.frame %>% na.omit
-head(gleague_scale)
 ```
 
 ```{r}
