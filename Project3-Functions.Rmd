@@ -1,0 +1,127 @@
+---
+title: "Project3-Functions"
+author: "Carlos Aude - caa2185"
+date: "4/19/2021"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Import necessary libraries
+library(dplyr)
+library(lsa)
+library(factoextra)
+```
+
+```{r}
+# Import CSV
+gleague <- read.csv("G League Per 36 Min.csv")
+gadvanced <- read.csv("G League Advanced.csv")
+
+nba <- read.csv("NBA Per 36 Min.csv")
+nbaadvanced <- read.csv("NBA Advanced.csv")
+```
+
+```{r}
+# Clean G-League data
+gmerge <- c("Player","Tm","Age","G","MP")
+gleague <- merge(gleague, gadvanced, by=gmerge) %>% 
+  filter(MP > 500 & Age < 24)
+
+gleague <- gleague[!duplicated(gleague$Player),]
+rownames(gleague) <- gleague$Player
+
+remove <- c("Player","Tm","Age","G","MP","GS","X",
+            "FG","X3P","X2P","FT","TRB","TRB.","WS","WS.48")
+
+gleague_clean <- gleague %>% filter(MP > 500 & Age < 24) %>% select(-remove)
+head(gleague_clean)
+```
+
+```{r}
+# Clean NBA data
+nba$Season <- sub(".*-(.*)", "\\1", nba$Season)
+nba[,"ID"] <- paste(nba$Player, nba$Season)
+nba <- nba[!duplicated(nba$ID),]
+rownames(nba) <- nba$ID
+
+nbamerge <- c("Player","Tm","Age","G","MP","Pos")
+nba_merge <- merge(nba, nbaadvanced, by=nbamerge)
+nba_merge <- nba_merge[order(nba_merge$Player),]
+rownames(nba_merge) <- nba_merge$ID
+
+keep <- names(gleague_clean)
+nba_clean <- nba_merge %>% filter(MP > 1500) %>% select(keep)
+head(nba_clean)
+```
+
+```{r}
+# Engineer Features - NBA
+nba_clean[,"DEF"] <- (nba_clean$STL + nba_clean$BLK + nba_clean$DRB + nba_clean$DWS) / nba_clean$PF
+nba_clean[,"DL"] <- (nba_clean$STL. + nba_clean$BLK. + nba_clean$DRB.) / nba_clean$PF
+nba_clean[,"OFF"] <- nba_clean$TS + nba_clean$ORB + nba_clean$OWS + nba_clean$PTS
+nba_clean[,"USE"] <- (nba_clean$X2PA + nba_clean$X3PA + nba_clean$FTA + nba_clean$AST. + nba_clean$USG.) / nba_clean$TOV.
+nba_clean[,"O/D"] <- nba_clean$OFF/nba_clean$DEF
+
+# Scale data
+nba_scale <- nba_clean %>% scale %>% as.data.frame %>% na.omit 
+head(nba_scale)
+```
+
+```{r}
+# Engineer Features - G-League
+gleague_clean[,"DEF"] <- (gleague_clean$STL + gleague_clean$BLK + gleague_clean$DRB + gleague_clean$DWS) / gleague_clean$PF
+gleague_clean[,"DL"] <- (gleague_clean$STL. + gleague_clean$BLK. + gleague_clean$DRB.) / gleague_clean$PF
+gleague_clean[,"OFF"] <- gleague_clean$TS + gleague_clean$ORB + gleague_clean$OWS + gleague_clean$PTS
+gleague_clean[,"USE"] <- (gleague_clean$X2PA + gleague_clean$X3PA + gleague_clean$FTA + gleague_clean$AST. + gleague_clean$USG.) / gleague_clean$TOV.
+gleague_clean[,"O/D"] <- gleague_clean$OFF/gleague_clean$DEF
+
+# Scale data
+gleague_scale <- gleague_clean %>% scale %>% as.data.frame %>% na.omit
+head(gleague_scale)
+```
+
+```{r}
+# Perform PCA on NBA and transpose
+pca <- prcomp(nba_scale, 
+              center=F, scale=F) # already scaled
+nba_pca <- pca$x[,1:8] %>% t
+
+# Apply PCA loadings from NBA PCA to G-League data via matrix multiplication and transpose
+gleague_pca <- as.matrix(gleague_scale) %*% as.matrix(pca$rotation[,1:8]) %>% t
+```
+
+```{r}
+# Create functions that return most/least similar players
+
+## Enter G-League player and receive NBA comparisons
+nba_comp <- function(name,ncomp=5){
+  cos <- cosine(gleague_pca[,name],nba_pca) %>% scale
+  names(cos) <- names(nba_pca[1,])
+  list <- cos[order(cos,decreasing=T)]
+  last <- (length(list)-ncomp+1):length(list)
+  
+  most_sim <- list[c(1:ncomp)]
+  least_sim <- list[last]
+  result <- list(most_sim, least_sim)
+  names(result) <- c("Most Similar NBA Players",
+                     "Least Similar NBA Players")
+  
+  print(result)
+}
+
+## Enter NBA player and receive G-League comparisons
+g_comp <- function(name,ncomp=5){
+  cos <- cosine(nba_pca[,name],gleague_pca) %>% scale
+  names(cos) <- names(gleague_pca[1,])
+  list <- cos[order(cos,decreasing=T)]
+  last <- (length(list)-ncomp+1):length(list)
+  
+  most_sim <- list[c(1:ncomp)]
+  least_sim <- list[last]
+  result <- list(most_sim, least_sim)
+  names(result) <- c("Most Similar G-League Players",
+                     "Least Similar G-League Players")
+  
+  print(result)
+}
+```

@@ -1,0 +1,163 @@
+---
+title: "Project3-Analysis"
+author: "Carlos Aude - caa2185"
+date: "4/19/2021"
+output: html_document
+---
+
+```{r message=FALSE, warning=FALSE}
+# Import necessary libraries
+library(dplyr)
+library(lsa)
+library(factoextra)
+```
+
+```{r}
+# Import CSV
+gleague <- read.csv("G League Per 36 Min.csv")
+gadvanced <- read.csv("G League Advanced.csv")
+
+nba <- read.csv("NBA Per 36 Min.csv")
+nbaadvanced <- read.csv("NBA Advanced.csv")
+```
+
+```{r}
+# Clean G-League data
+gmerge <- c("Player","Tm","Age","G","MP")
+gleague <- merge(gleague, gadvanced, by=gmerge) %>% 
+  filter(MP > 500 & Age < 24)
+
+gleague <- gleague[!duplicated(gleague$Player),]
+rownames(gleague) <- gleague$Player
+
+remove <- c("Player","Tm","Age","G","MP","GS","X",
+            "FG","X3P","X2P","FT","TRB","TRB.","WS","WS.48")
+
+gleague_clean <- gleague %>% filter(MP > 500 & Age < 24) %>% select(-remove)
+head(gleague_clean)
+```
+
+```{r}
+# Clean NBA data
+nba$Season <- sub(".*-(.*)", "\\1", nba$Season)
+nba[,"ID"] <- paste(nba$Player, nba$Season)
+nba <- nba[!duplicated(nba$ID),]
+rownames(nba) <- nba$ID
+
+nbamerge <- c("Player","Tm","Age","G","MP","Pos")
+nba_merge <- merge(nba, nbaadvanced, by=nbamerge)
+nba_merge <- nba_merge[order(nba_merge$Player),]
+rownames(nba_merge) <- nba_merge$ID
+
+keep <- names(gleague_clean)
+nba_clean <- nba_merge %>% filter(MP > 1500) %>% select(keep)
+head(nba_clean)
+```
+```{r}
+# Summary Statistics
+summary(nba_clean)
+summary(gleague_clean)
+```
+
+```{r}
+# Engineer Features - NBA
+nba_clean[,"DEF"] <- (nba_clean$STL + nba_clean$BLK + nba_clean$DRB + nba_clean$DWS) / nba_clean$PF
+nba_clean[,"DL"] <- (nba_clean$STL. + nba_clean$BLK. + nba_clean$DRB.) / nba_clean$PF
+nba_clean[,"OFF"] <- nba_clean$TS + nba_clean$ORB + nba_clean$OWS + nba_clean$PTS
+nba_clean[,"USE"] <- (nba_clean$X2PA + nba_clean$X3PA + nba_clean$FTA + nba_clean$AST. + nba_clean$USG.) / nba_clean$TOV.
+nba_clean[,"O/D"] <- nba_clean$OFF/nba_clean$DEF
+
+# Scale data
+nba_scale <- nba_clean %>% scale %>% as.data.frame %>% na.omit 
+head(nba_scale)
+```
+
+```{r}
+# Engineer Features - G-League
+gleague_clean[,"DEF"] <- (gleague_clean$STL + gleague_clean$BLK + gleague_clean$DRB + gleague_clean$DWS) / gleague_clean$PF
+gleague_clean[,"DL"] <- (gleague_clean$STL. + gleague_clean$BLK. + gleague_clean$DRB.) / gleague_clean$PF
+gleague_clean[,"OFF"] <- gleague_clean$TS + gleague_clean$ORB + gleague_clean$OWS + gleague_clean$PTS
+gleague_clean[,"USE"] <- (gleague_clean$X2PA + gleague_clean$X3PA + gleague_clean$FTA + gleague_clean$AST. + gleague_clean$USG.) / gleague_clean$TOV.
+gleague_clean[,"O/D"] <- gleague_clean$OFF/gleague_clean$DEF
+
+# Scale data
+gleague_scale <- gleague_clean %>% scale %>% as.data.frame %>% na.omit
+head(gleague_scale)
+```
+
+```{r}
+# Choose number of K
+fviz_nbclust(as.matrix(nba_scale), kmeans, method="wss")
+```
+
+```{r}
+# Perform K-means
+set.seed(12345)
+k_clust <- kmeans(nba_scale, 5, nstart=100)
+fviz_cluster(k_clust, data=nba_scale,
+             geom=c("point"), ellipse=T,
+             main="K-Means Clustering of NBA Players")
+```
+
+```{r}
+# Create new data frame that includes cluster id for each player
+cluster_df <- nba_merge %>% na.omit %>% filter(MP > 1500) %>% select(Pos,PER)
+cluster_df["cluster"] <- k_clust$cluster[order(names(k_clust$cluster))]
+
+# Use cluster_df to find the distribution of each position for the clusters
+cluster_table <- table(cluster_df$Pos, cluster_df$cluster) %>% as.matrix
+
+# Normalize cluster table by taking into account the number of players per position
+pos_table <- table(cluster_df$Pos)
+prop_cluster_table <- (cluster_table/rep(pos_table,5)) %>% round(3) %>% as.matrix
+print(prop_cluster_table)
+```
+
+```{r}
+# Find top position associated with each cluster
+pos_list <- list((prop_cluster_table[order(prop_cluster_table[,1], decreasing=T),] %>% rownames)[1],
+                 (prop_cluster_table[order(prop_cluster_table[,2], decreasing=T),] %>% rownames)[1],
+                 (prop_cluster_table[order(prop_cluster_table[,3], decreasing=T),] %>% rownames)[1],
+                 (prop_cluster_table[order(prop_cluster_table[,4], decreasing=T),] %>% rownames)[1],
+                 (prop_cluster_table[order(prop_cluster_table[,5], decreasing=T),] %>% rownames)[1])
+
+names(pos_list) <- c("Top Position for Cluster 1",
+                     "Top Position for Cluster 2",
+                     "Top Position for Cluster 3",
+                     "Top Position for Cluster 4",
+                     "Top Position for Cluster 5")
+
+print(pos_list)
+```
+
+```{r}
+# PCA Screeplot (Kaiser Rule)
+pca <- prcomp(nba_scale, 
+              center=F, scale=F) # already scaled
+
+screeplot(pca, type="line", npcs=34,
+          main="PCA Screeplot", pch=15, col="darkblue")
+abline(h=1, col="red", lty=2)
+```
+
+```{r}
+# PCA Cumulative Variance (n-components above 90% heuristic)
+eigen_val <- pca$sdev^2
+
+plot((cumsum(eigen_val) / sum(eigen_val))*100, main="Cumulative % Variance Captured",
+     xlab="Component", ylab="% of Variance Captured", pch=19, col="darkblue")
+abline(h=90, col="red", lty=2)
+```
+
+```{r}
+# Top features for principal components
+comp1 <- pca$rotation[,1] %>% abs
+comp2 <- pca$rotation[,2] %>% abs
+comp3 <- pca$rotation[,3] %>% abs
+comp4 <- pca$rotation[,4] %>% abs
+
+comp1[order(comp1, decreasing=T)] %>% names %>% head(3) # Top features for Component 1 
+comp2[order(comp2, decreasing=T)] %>% names %>% head(3) # Top features for Component 2
+comp3[order(comp3, decreasing=T)] %>% names %>% head(3) # Top features for Component 3 
+comp4[order(comp4, decreasing=T)] %>% names %>% head(3) # Top features for Component 4
+```
